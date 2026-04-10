@@ -99,7 +99,8 @@
       Every region is either white or black, giving 2^6 = 64 possibilities.
       Rotational duplicates are removed, leaving 14 unique patterns.
       Bit order in the label is b0..b5 = (1-2), (2-3), (3-4), (4-5), (5-6), (6-1).
-      White is walkable space, black is wall; red lines show possible movement routes between side midpoints.
+      White is walkable space, black is wall; red lines show all possible movement routes between side midpoints,
+      including routes that pass through the center.
     </p>
     <canvas id="tiles" width="1120" height="620" aria-label="Hexagon tile combinations"></canvas>
   </main>
@@ -184,79 +185,96 @@
       return open;
     }
 
-    function sideGraph(open) {
-      const adj = Array.from({ length: 6 }, () => []);
+    function movementGraph(open, includeCenter) {
+      const centerNode = 6;
+      const adj = Array.from({ length: 7 }, () => []);
       for (let i = 0; i < 6; i += 1) {
         const j = (i + 1) % 6;
         if (open[i] && open[j]) {
           adj[i].push(j);
           adj[j].push(i);
         }
+
+        if (includeCenter && open[i]) {
+          adj[i].push(centerNode);
+          adj[centerNode].push(i);
+        }
       }
       return adj;
     }
 
-    function shortestPath(adj, open, start, goal) {
+    function enumerateAllSimplePaths(adj, open, start, goal) {
       if (!open[start] || !open[goal]) return null;
-      const queue = [start];
-      const prev = new Array(6).fill(-1);
-      const visited = new Array(6).fill(false);
-      visited[start] = true;
+      const paths = [];
+      const visited = new Array(adj.length).fill(false);
+      const stack = [];
 
-      while (queue.length > 0) {
-        const node = queue.shift();
-        if (node === goal) break;
-        for (const n of adj[node]) {
-          if (!visited[n]) {
-            visited[n] = true;
-            prev[n] = node;
-            queue.push(n);
+      function dfs(node) {
+        visited[node] = true;
+        stack.push(node);
+
+        if (node === goal) {
+          paths.push([...stack]);
+        } else {
+          for (const n of adj[node]) {
+            if (!visited[n]) {
+              dfs(n);
+            }
           }
         }
+
+        stack.pop();
+        visited[node] = false;
       }
 
-      if (!visited[goal]) return null;
-
-      const path = [];
-      let cur = goal;
-      while (cur !== -1) {
-        path.push(cur);
-        if (cur === start) break;
-        cur = prev[cur];
-      }
-      path.reverse();
-      return path;
+      dfs(start);
+      paths.sort((a, b) => a.length - b.length);
+      return paths;
     }
 
     function drawMovementPaths(ctx, cx, cy, mids, mask) {
       const open = walkableSides(mask);
-      const adj = sideGraph(open);
+      const adj = movementGraph(open, true);
 
       ctx.strokeStyle = "#d01919";
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.35;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
+      ctx.globalAlpha = 0.62;
+
+      function nodePoint(node) {
+        if (node === 6) {
+          return { x: cx, y: cy };
+        }
+        const mx = mids[node].x;
+        const my = mids[node].y;
+        return {
+          x: cx + (mx - cx) * 0.56,
+          y: cy + (my - cy) * 0.56
+        };
+      }
 
       for (let i = 0; i < 6; i += 1) {
         for (let j = i + 1; j < 6; j += 1) {
-          const path = shortestPath(adj, open, i, j);
-          if (!path) continue;
+          const paths = enumerateAllSimplePaths(adj, open, i, j);
+          if (!paths || paths.length === 0) continue;
 
-          ctx.beginPath();
-          ctx.moveTo(mids[i].x, mids[i].y);
+          for (const path of paths) {
+            ctx.beginPath();
+            ctx.moveTo(mids[i].x, mids[i].y);
 
-          for (const node of path) {
-            const mx = mids[node].x;
-            const my = mids[node].y;
-            const px = cx + (mx - cx) * 0.56;
-            const py = cy + (my - cy) * 0.56;
-            ctx.lineTo(px, py);
+            for (let k = 1; k < path.length - 1; k += 1) {
+              const p = nodePoint(path[k]);
+              ctx.lineTo(p.x, p.y);
+            }
+
+            ctx.lineTo(mids[j].x, mids[j].y);
+            ctx.stroke();
           }
-
-          ctx.lineTo(mids[j].x, mids[j].y);
-          ctx.stroke();
         }
       }
+
+      ctx.globalAlpha = 1;
     }
 
     function drawTile(ctx, cx, cy, radius, mask, index, canonical) {
