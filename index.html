@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hexagon Tile Combinations (64 Fill States)</title>
+  <title>Hexagon Tile Combinations (Rotation-Unique)</title>
   <style>
     :root {
       --bg-a: #f4efe6;
@@ -93,13 +93,14 @@
 </head>
 <body>
   <main class="panel">
-    <h1>64 Hexagon Fill Possibilities</h1>
+    <h1>Rotation-Unique Hexagon Fill Possibilities</h1>
     <p>
       Each hexagon is divided into 6 side-pair regions: (1-2), (2-3), (3-4), (4-5), (5-6), (6-1).
-      Every region is either white or black, giving 2^6 = 64 possibilities (including rotation duplicates).
+      Every region is either white or black, giving 2^6 = 64 possibilities.
+      Rotational duplicates are removed, leaving 14 unique patterns.
       Bit order in the label is b0..b5 = (1-2), (2-3), (3-4), (4-5), (5-6), (6-1).
     </p>
-    <canvas id="tiles" width="1120" height="980" aria-label="Hexagon tile combinations"></canvas>
+    <canvas id="tiles" width="1120" height="620" aria-label="Hexagon tile combinations"></canvas>
   </main>
 
   <script>
@@ -131,7 +132,40 @@
       ctx.fill();
     }
 
-    function drawTile(ctx, cx, cy, radius, mask, index) {
+    function rotateMask(mask, shift) {
+      const bits = 6;
+      const s = ((shift % bits) + bits) % bits;
+      const right = mask >> s;
+      const left = (mask << (bits - s)) & 0x3f;
+      return (right | left) & 0x3f;
+    }
+
+    function canonicalRotation(mask) {
+      let best = mask;
+      for (let s = 1; s < 6; s += 1) {
+        const r = rotateMask(mask, s);
+        if (r < best) best = r;
+      }
+      return best;
+    }
+
+    function rotationallyUniqueMasks() {
+      const seen = new Set();
+      const unique = [];
+
+      for (let mask = 0; mask < 64; mask += 1) {
+        const canon = canonicalRotation(mask);
+        if (!seen.has(canon)) {
+          seen.add(canon);
+          unique.push(mask);
+        }
+      }
+
+      unique.sort((a, b) => canonicalRotation(a) - canonicalRotation(b));
+      return unique;
+    }
+
+    function drawTile(ctx, cx, cy, radius, mask, index, canonical) {
       const verts = midpointVertices(cx, cy, radius);
       const center = { x: cx, y: cy };
 
@@ -162,28 +196,34 @@
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--label").trim();
       ctx.font = "600 12px Trebuchet MS, Segoe UI, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`#${index.toString().padStart(2, "0")}: ${mask.toString(2).padStart(6, "0")}`, cx, cy + radius + 18);
+      ctx.fillText(`#${index.toString().padStart(2, "0")}: ${canonical.toString(2).padStart(6, "0")}`, cx, cy + radius + 18);
     }
 
     function drawGallery() {
       const canvas = document.getElementById("tiles");
       const ctx = canvas.getContext("2d");
 
-      const total = 64;
-      const cols = 8;
-      const rows = 8;
+      const masks = rotationallyUniqueMasks();
+      const total = masks.length;
+      const cols = 7;
+      const rows = Math.ceil(total / cols);
       const cellW = canvas.width / cols;
       const cellH = canvas.height / rows;
-      const radius = Math.min(cellW, cellH) * 0.29;
+      const radius = Math.min(cellW, cellH) * 0.31;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (total !== 14) {
+        console.error(`Expected 14 rotation-unique patterns, got ${total}`);
+      }
 
       for (let i = 0; i < total; i += 1) {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const cx = col * cellW + cellW / 2;
         const cy = row * cellH + cellH / 2 - 10;
-        drawTile(ctx, cx, cy, radius, i, i + 1);
+        const mask = masks[i];
+        drawTile(ctx, cx, cy, radius, mask, i + 1, canonicalRotation(mask));
       }
     }
 
