@@ -99,6 +99,7 @@
       Every region is either white or black, giving 2^6 = 64 possibilities.
       Rotational duplicates are removed, leaving 14 unique patterns.
       Bit order in the label is b0..b5 = (1-2), (2-3), (3-4), (4-5), (5-6), (6-1).
+      White is walkable space, black is wall; red lines show possible movement routes between side midpoints.
     </p>
     <canvas id="tiles" width="1120" height="620" aria-label="Hexagon tile combinations"></canvas>
   </main>
@@ -165,8 +166,102 @@
       return unique;
     }
 
+    function edgeMidpoints(verts) {
+      const mids = [];
+      for (let i = 0; i < 6; i += 1) {
+        const a = verts[i];
+        const b = verts[(i + 1) % 6];
+        mids.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      }
+      return mids;
+    }
+
+    function walkableSides(mask) {
+      const open = [];
+      for (let i = 0; i < 6; i += 1) {
+        open.push(((mask >> i) & 1) === 0);
+      }
+      return open;
+    }
+
+    function sideGraph(open) {
+      const adj = Array.from({ length: 6 }, () => []);
+      for (let i = 0; i < 6; i += 1) {
+        const j = (i + 1) % 6;
+        if (open[i] && open[j]) {
+          adj[i].push(j);
+          adj[j].push(i);
+        }
+      }
+      return adj;
+    }
+
+    function shortestPath(adj, open, start, goal) {
+      if (!open[start] || !open[goal]) return null;
+      const queue = [start];
+      const prev = new Array(6).fill(-1);
+      const visited = new Array(6).fill(false);
+      visited[start] = true;
+
+      while (queue.length > 0) {
+        const node = queue.shift();
+        if (node === goal) break;
+        for (const n of adj[node]) {
+          if (!visited[n]) {
+            visited[n] = true;
+            prev[n] = node;
+            queue.push(n);
+          }
+        }
+      }
+
+      if (!visited[goal]) return null;
+
+      const path = [];
+      let cur = goal;
+      while (cur !== -1) {
+        path.push(cur);
+        if (cur === start) break;
+        cur = prev[cur];
+      }
+      path.reverse();
+      return path;
+    }
+
+    function drawMovementPaths(ctx, cx, cy, mids, mask) {
+      const open = walkableSides(mask);
+      const adj = sideGraph(open);
+
+      ctx.strokeStyle = "#d01919";
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      for (let i = 0; i < 6; i += 1) {
+        for (let j = i + 1; j < 6; j += 1) {
+          const path = shortestPath(adj, open, i, j);
+          if (!path) continue;
+
+          ctx.beginPath();
+          ctx.moveTo(mids[i].x, mids[i].y);
+
+          for (const node of path) {
+            const mx = mids[node].x;
+            const my = mids[node].y;
+            const px = cx + (mx - cx) * 0.56;
+            const py = cy + (my - cy) * 0.56;
+            ctx.lineTo(px, py);
+          }
+
+          ctx.lineTo(mids[j].x, mids[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+
     function drawTile(ctx, cx, cy, radius, mask, index, canonical) {
       const verts = midpointVertices(cx, cy, radius);
+      const mids = edgeMidpoints(verts);
       const center = { x: cx, y: cy };
 
       drawHexPath(ctx, verts);
@@ -192,6 +287,8 @@
       ctx.lineWidth = 2;
       ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--tile-outline").trim();
       ctx.stroke();
+
+      drawMovementPaths(ctx, cx, cy, mids, mask);
 
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--label").trim();
       ctx.font = "600 12px Trebuchet MS, Segoe UI, sans-serif";
