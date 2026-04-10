@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hexagon Tile Combinations (Rotation-Unique)</title>
+  <title>Hexagon Tile Combinations (64 Fill States)</title>
   <style>
     :root {
       --bg-a: #f4efe6;
@@ -93,16 +93,13 @@
 </head>
 <body>
   <main class="panel">
-    <h1>Rotation-Unique Hexagon Fill Possibilities</h1>
+    <h1>64 Hexagon Fill Possibilities</h1>
     <p>
       Each hexagon is divided into 6 side-pair regions: (1-2), (2-3), (3-4), (4-5), (5-6), (6-1).
-      Every region is either white or black, giving 2^6 = 64 possibilities.
-      Rotational duplicates are removed, leaving 14 unique patterns.
+      Every region is either white or black, giving 2^6 = 64 possibilities (including rotation duplicates).
       Bit order in the label is b0..b5 = (1-2), (2-3), (3-4), (4-5), (5-6), (6-1).
-      White is walkable space, black is wall; red lines show all possible movement routes between side midpoints,
-      including routes that pass through the center.
     </p>
-    <canvas id="tiles" width="1120" height="620" aria-label="Hexagon tile combinations"></canvas>
+    <canvas id="tiles" width="1120" height="980" aria-label="Hexagon tile combinations"></canvas>
   </main>
 
   <script>
@@ -134,152 +131,8 @@
       ctx.fill();
     }
 
-    function rotateMask(mask, shift) {
-      const bits = 6;
-      const s = ((shift % bits) + bits) % bits;
-      const right = mask >> s;
-      const left = (mask << (bits - s)) & 0x3f;
-      return (right | left) & 0x3f;
-    }
-
-    function canonicalRotation(mask) {
-      let best = mask;
-      for (let s = 1; s < 6; s += 1) {
-        const r = rotateMask(mask, s);
-        if (r < best) best = r;
-      }
-      return best;
-    }
-
-    function rotationallyUniqueMasks() {
-      const seen = new Set();
-      const unique = [];
-
-      for (let mask = 0; mask < 64; mask += 1) {
-        const canon = canonicalRotation(mask);
-        if (!seen.has(canon)) {
-          seen.add(canon);
-          unique.push(mask);
-        }
-      }
-
-      unique.sort((a, b) => canonicalRotation(a) - canonicalRotation(b));
-      return unique;
-    }
-
-    function edgeMidpoints(verts) {
-      const mids = [];
-      for (let i = 0; i < 6; i += 1) {
-        const a = verts[i];
-        const b = verts[(i + 1) % 6];
-        mids.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-      }
-      return mids;
-    }
-
-    function walkableSides(mask) {
-      const open = [];
-      for (let i = 0; i < 6; i += 1) {
-        open.push(((mask >> i) & 1) === 0);
-      }
-      return open;
-    }
-
-    function movementGraph(open, includeCenter) {
-      const centerNode = 6;
-      const adj = Array.from({ length: 7 }, () => []);
-      for (let i = 0; i < 6; i += 1) {
-        const j = (i + 1) % 6;
-        if (open[i] && open[j]) {
-          adj[i].push(j);
-          adj[j].push(i);
-        }
-
-        if (includeCenter && open[i]) {
-          adj[i].push(centerNode);
-          adj[centerNode].push(i);
-        }
-      }
-      return adj;
-    }
-
-    function enumerateAllSimplePaths(adj, open, start, goal) {
-      if (!open[start] || !open[goal]) return null;
-      const paths = [];
-      const visited = new Array(adj.length).fill(false);
-      const stack = [];
-
-      function dfs(node) {
-        visited[node] = true;
-        stack.push(node);
-
-        if (node === goal) {
-          paths.push([...stack]);
-        } else {
-          for (const n of adj[node]) {
-            if (!visited[n]) {
-              dfs(n);
-            }
-          }
-        }
-
-        stack.pop();
-        visited[node] = false;
-      }
-
-      dfs(start);
-      paths.sort((a, b) => a.length - b.length);
-      return paths;
-    }
-
-    function drawMovementPaths(ctx, cx, cy, mids, mask) {
-      const open = walkableSides(mask);
-      const adj = movementGraph(open, true);
-
-      ctx.strokeStyle = "#d01919";
-      ctx.lineWidth = 1.35;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.globalAlpha = 0.62;
-
-      function nodePoint(node) {
-        if (node === 6) {
-          return { x: cx, y: cy };
-        }
-        const mx = mids[node].x;
-        const my = mids[node].y;
-        return {
-          x: cx + (mx - cx) * 0.56,
-          y: cy + (my - cy) * 0.56
-        };
-      }
-
-      for (let i = 0; i < 6; i += 1) {
-        for (let j = i + 1; j < 6; j += 1) {
-          const paths = enumerateAllSimplePaths(adj, open, i, j);
-          if (!paths || paths.length === 0) continue;
-
-          for (const path of paths) {
-            ctx.beginPath();
-            ctx.moveTo(mids[i].x, mids[i].y);
-
-            for (let k = 1; k < path.length - 1; k += 1) {
-              const p = nodePoint(path[k]);
-              ctx.lineTo(p.x, p.y);
-            }
-
-            ctx.lineTo(mids[j].x, mids[j].y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      ctx.globalAlpha = 1;
-    }
-
-    function drawTile(ctx, cx, cy, radius, mask, index, canonical) {
+    function drawTile(ctx, cx, cy, radius, mask, index) {
       const verts = midpointVertices(cx, cy, radius);
-      const mids = edgeMidpoints(verts);
       const center = { x: cx, y: cy };
 
       drawHexPath(ctx, verts);
@@ -306,39 +159,31 @@
       ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--tile-outline").trim();
       ctx.stroke();
 
-      drawMovementPaths(ctx, cx, cy, mids, mask);
-
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--label").trim();
       ctx.font = "600 12px Trebuchet MS, Segoe UI, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`#${index.toString().padStart(2, "0")}: ${canonical.toString(2).padStart(6, "0")}`, cx, cy + radius + 18);
+      ctx.fillText(`#${index.toString().padStart(2, "0")}: ${mask.toString(2).padStart(6, "0")}`, cx, cy + radius + 18);
     }
 
     function drawGallery() {
       const canvas = document.getElementById("tiles");
       const ctx = canvas.getContext("2d");
 
-      const masks = rotationallyUniqueMasks();
-      const total = masks.length;
-      const cols = 7;
-      const rows = Math.ceil(total / cols);
+      const total = 64;
+      const cols = 8;
+      const rows = 8;
       const cellW = canvas.width / cols;
       const cellH = canvas.height / rows;
-      const radius = Math.min(cellW, cellH) * 0.31;
+      const radius = Math.min(cellW, cellH) * 0.29;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      if (total !== 14) {
-        console.error(`Expected 14 rotation-unique patterns, got ${total}`);
-      }
 
       for (let i = 0; i < total; i += 1) {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const cx = col * cellW + cellW / 2;
         const cy = row * cellH + cellH / 2 - 10;
-        const mask = masks[i];
-        drawTile(ctx, cx, cy, radius, mask, i + 1, canonicalRotation(mask));
+        drawTile(ctx, cx, cy, radius, i, i + 1);
       }
     }
 
