@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hexagon Path Combinations</title>
+  <style>
+    :root {
+      --bg-a: #f4efe6;
+      --bg-b: #e6dccf;
+      --ink: #121212;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(255,255,255,0.35), transparent 45%),
+        radial-gradient(circle at 85% 75%, rgba(210,185,150,0.25), transparent 50%),
+        linear-gradient(145deg, var(--bg-a), var(--bg-b));
+      display: grid;
+      place-items: start center;
+      padding: 24px;
+    }
+
+    .panel {
+      width: min(1240px, 100%);
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(50,40,30,0.16);
+      border-radius: 16px;
+      box-shadow: 0 14px 38px -16px rgba(20,16,12,0.16);
+      backdrop-filter: blur(3px);
+      padding: 16px;
+      animation: panel-in 560ms cubic-bezier(.18,.78,.22,.99);
+    }
+
+    h1 {
+      margin: 4px 0 6px;
+      font-size: clamp(1.2rem, 2.2vw, 1.8rem);
+      letter-spacing: 0.01em;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: #343434;
+      font-size: 0.96rem;
+      line-height: 1.4;
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      border-radius: 12px;
+      border: 1px solid rgba(20,20,20,0.15);
+      background: rgba(255,255,255,0.66);
+      animation: canvas-in 700ms ease-out;
+    }
+
+    #count { font-weight: 700; }
+
+    @keyframes panel-in {
+      from { opacity: 0; transform: translateY(10px) scale(0.99); }
+      to   { opacity: 1; transform: translateY(0)   scale(1);    }
+    }
+    @keyframes canvas-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0);   }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>Hexagon Path Combinations (Rotation-Unique)</h1>
+    <p>
+      A hexagon has 6 corners. Any two corners can be connected by a straight path, giving
+      C(6,2)&nbsp;=&nbsp;15 possible connections and 2<sup>15</sup>&nbsp;=&nbsp;32&thinsp;768 combinations.
+      Rotational duplicates (6-fold symmetry) are removed, leaving
+      <strong><span id="count">&hellip;</span> unique patterns</strong>.
+      The hexagon outline is black; active paths are drawn in red.
+    </p>
+    <canvas id="tiles" width="1240" height="600" aria-label="Hexagon path combinations"></canvas>
+  </main>
+
+  <script>
+    // ── Layout ──────────────────────────────────────────────────────────────
+    const COLS     = 31;
+    const CANVAS_W = 1240;
+    const CELL_W   = CANVAS_W / COLS;          // ≈ 40 px
+    const CELL_H   = 56;
+    const RADIUS   = CELL_W * 0.37;            // ≈ 14.8 px
+
+    // ── Geometry ────────────────────────────────────────────────────────────
+    // Pointy-top hexagon: corner i is at angle -90° + i*60°
+    function corners(cx, cy, r) {
+      const v = [];
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + i * (Math.PI / 3);
+        v.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+      }
+      return v;
+    }
+
+    // ── Edge catalogue ──────────────────────────────────────────────────────
+    // 15 edges indexed 0–14 in lex order of (lo, hi) corner pairs
+    const EDGES = [];
+    for (let a = 0; a < 6; a++)
+      for (let b = a + 1; b < 6; b++)
+        EDGES.push([a, b]);
+
+    // Rotation by 1 step maps corner i → (i+1)%6.
+    // Precompute which edge index each edge maps to under one rotation.
+    const ROT_PERM = EDGES.map(([a, b]) => {
+      const na = (a + 1) % 6, nb = (b + 1) % 6;
+      const lo = Math.min(na, nb), hi = Math.max(na, nb);
+      return EDGES.findIndex(([ea, eb]) => ea === lo && eb === hi);
+    });
+
+    function rotateEdgeMask(mask) {
+      let next = 0;
+      for (let i = 0; i < 15; i++)
+        if ((mask >> i) & 1) next |= 1 << ROT_PERM[i];
+      return next;
+    }
+
+    function canonicalMask(mask) {
+      let best = mask, cur = mask;
+      for (let s = 1; s < 6; s++) {
+        cur = rotateEdgeMask(cur);
+        if (cur < best) best = cur;
+      }
+      return best;
+    }
+
+    // ── Generate all rotation-unique non-empty edge masks ───────────────────
+    function uniqueEdgeMasks() {
+      const seen   = new Set();
+      const unique = [];
+      for (let mask = 1; mask < (1 << 15); mask++) {
+        const canon = canonicalMask(mask);
+        if (!seen.has(canon)) {
+          seen.add(canon);
+          unique.push(mask);
+        }
+      }
+      // Sort by canonical value so visually similar tiles appear together
+      unique.sort((a, b) => canonicalMask(a) - canonicalMask(b));
+      return unique;
+    }
+
+    // ── Draw one tile ────────────────────────────────────────────────────────
+    function drawTile(ctx, cx, cy, r, mask, index) {
+      const v = corners(cx, cy, r);
+
+      // Hexagon outline
+      ctx.beginPath();
+      ctx.moveTo(v[0].x, v[0].y);
+      for (let i = 1; i < 6; i++) ctx.lineTo(v[i].x, v[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Red paths
+      ctx.strokeStyle = "#cc2020";
+      ctx.lineWidth = 1.4;
+      for (let i = 0; i < 15; i++) {
+        if (!((mask >> i) & 1)) continue;
+        const [a, b] = EDGES[i];
+        ctx.beginPath();
+        ctx.moveTo(v[a].x, v[a].y);
+        ctx.lineTo(v[b].x, v[b].y);
+        ctx.stroke();
+      }
+
+      // Corner dots
+      ctx.fillStyle = "#1a1a1a";
+      for (const pt of v) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Index label below tile
+      ctx.fillStyle = "#555";
+      ctx.font = "600 7.5px 'Trebuchet MS', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(index, cx, cy + r + 11);
+    }
+
+    // ── Draw gallery ─────────────────────────────────────────────────────────
+    function drawGallery() {
+      const canvas = document.getElementById("tiles");
+      const ctx    = canvas.getContext("2d");
+      const masks  = uniqueEdgeMasks();
+      const total  = masks.length;
+
+      document.getElementById("count").textContent = total.toLocaleString();
+
+      const rows = Math.ceil(total / COLS);
+      canvas.height = rows * CELL_H + 24;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let i = 0; i < total; i++) {
+        const col = i % COLS;
+        const row = Math.floor(i / COLS);
+        const cx  = col * CELL_W + CELL_W / 2;
+        const cy  = row * CELL_H + CELL_H / 2 - 4;
+        drawTile(ctx, cx, cy, RADIUS, masks[i], i + 1);
+      }
+    }
+
+    drawGallery();
+  </script>
+</body>
+</html>

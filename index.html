@@ -93,12 +93,12 @@
 </head>
 <body>
   <main class="panel">
-    <h1>Rotation-Unique Hexagon Fill Possibilities</h1>
+    <h1>Traversable Hexagon Tiles (Outer Path Only)</h1>
     <p>
       Each hexagon has 12 parts: 6 inner triangles and 6 outer trapezoids (formed by an inner hexagon at half the radius).
-      Every part is either white or black, giving 2<sup>12</sup> = 4096 possibilities.
-      Rotational duplicates are removed, leaving <strong>700 unique patterns</strong>.
-      Bits 0&ndash;5 = inner triangles, bits 6&ndash;11 = outer trapezoids (label shows hex value).
+      Shown here are rotation-unique patterns where you can travel from one outer side to another
+      <strong>through white outer trapezoids only</strong> &mdash; the center is never part of the path.
+      At least 2 adjacent white outer trapezoids are required. Label shows hex value.
     </p>
     <canvas id="tiles" width="1120" height="1960" aria-label="Hexagon tile combinations"></canvas>
   </main>
